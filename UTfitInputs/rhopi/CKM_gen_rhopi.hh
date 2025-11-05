@@ -36,10 +36,10 @@ double Amp_max;
 double Azz_max;
 
 // separated correlation matrices for BaBar
-TMatrixF corStat_BaBar(26,26);
-TMatrixF corSys_BaBar(26,26);
+TMatrixDSym covStat_BaBar(26);
+TMatrixDSym covSys_BaBar(26);
 // single correlation matrix for Belle
-TMatrixF cor_Belle(26,26);
+TMatrixDSym cov_Belle(26);
 
 // central values of parameters and total errors
 // obtained by summing in quadrature the stat and syst

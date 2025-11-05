@@ -97,11 +97,11 @@ int main(int argc, char *argv[]){
   // seed initialization 
   cout << "=========> number of extractions " << NExtractions << endl;
   
-  TMatrixD Vneu_BaBar(26,26);
-  TMatrixD Vneu_Belle(26,26);
-  Vneu_BaBar = (corStat_BaBar+corSys_BaBar).Invert();
-  //Vneu_BaBar = corStat_BaBar.Invert();
-  Vneu_Belle = cor_Belle.Invert();
+  TMatrixDSym Vneu_BaBar(26);
+  TMatrixDSym Vneu_Belle(26);
+  Vneu_BaBar = (covStat_BaBar+covSys_BaBar).Invert();
+  //Vneu_BaBar = covStat_BaBar.Invert();
+  Vneu_Belle = cov_Belle.Invert();
 
   for(int ix=0;ix<26;ix++) {
     for(int iy=0;iy<26;iy++) {
@@ -465,54 +465,53 @@ void Assign_Parameters(map<string, double> data) {
 
   // BaBar statistical correlation
   for(int ix=0;ix<26;ix++) {
-    for(int iy=0;iy<26;iy++) {
+    for(int iy=ix;iy<26;iy++) {
       char nameneu[256] ;
       sprintf(nameneu,"corStatBaBar_%d_%d",ix+1,iy+1);
-      corStat_BaBar(ix,iy) = data[(nameneu)]*SigNeu_BaBar[ix]*SigNeu_BaBar[iy];
-      cout << " read stat " << corStat_BaBar(ix,iy) << " index fixing for " << ix << " and " << iy << endl;
+      covStat_BaBar(ix,iy) = data[(nameneu)]*SigNeu_BaBar[ix]*SigNeu_BaBar[iy];
+      cout << " read stat " << covStat_BaBar(ix,iy) << " index fixing for " << ix << " and " << iy << endl;
     }
   }
 
   // to make it symmetric without inputting same numbers twice
   for(int ix=0;ix<26;ix++) {
     for(int iy=0;iy<ix;iy++) {
-      corStat_BaBar(iy,ix) = corStat_BaBar(iy,ix);
+      covStat_BaBar(iy,ix) = covStat_BaBar(iy,ix);
     }
   }
 
   // BaBar systematic correlation
   for(int ix=0;ix<26;ix++) {
-    for(int iy=0;iy<26;iy++) {
+    for(int iy=ix;iy<26;iy++) {
       char nameneu[256] ;
       sprintf(nameneu,"corSysBaBar_%d_%d",ix+1,iy+1);
-      corSys_BaBar(ix,iy) = data[(nameneu)]*SysNeu_BaBar[ix]*SysNeu_BaBar[iy];
-      cout << " read sys " << corSys_BaBar(ix,iy) << " index fixing for " << ix << " and " << iy << endl;
+      covSys_BaBar(ix,iy) = data[(nameneu)]*SysNeu_BaBar[ix]*SysNeu_BaBar[iy];
+      cout << " read sys " << covSys_BaBar(ix,iy) << " index fixing for " << ix << " and " << iy << endl;
     }
   }
 
   // to make it symmetric without inputting same numbers twice
   for(int ix=0;ix<26;ix++) {
     for(int iy=0;iy<ix;iy++) {
-      corSys_BaBar(ix,iy) = corSys_BaBar(iy,ix);
+      covSys_BaBar(ix,iy) = covSys_BaBar(iy,ix);
     }
   }
 
 
   for(int ix=0;ix<26;ix++) {
-    for(int iy=0;iy<26;iy++) {	
+    for(int iy=ix;iy<26;iy++) {	
       char nameneu[256] ;
       sprintf(nameneu,"corBelle_%d_%d",ix+1,iy+1);
-      cor_Belle(ix,iy) = data[(nameneu)]*SigTot_Belle[ix]*SigTot_Belle[iy];
+      cov_Belle(ix,iy) = data[(nameneu)]*SigTot_Belle[ix]*SigTot_Belle[iy];
     }
   }
 
   for(int ix=0;ix<26;ix++) {
-    for(int iy=ix;iy<26;iy++) {
-      if(cor_Belle(ix,iy) != cor_Belle(iy,ix)) {
-	cout << "Problems with Belle correlation matrix in entry (" << ix+1 << "," << iy+1 <<")" << endl;
+    for(int iy=0;iy<ix;iy++) {
+      // to make it symmetric without inputting same numbers twice
+      cov_Belle(ix,iy) = cov_Belle(iy,ix);
       }	  
     }
-  }
   
 }
 
