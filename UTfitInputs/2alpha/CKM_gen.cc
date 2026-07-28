@@ -216,8 +216,9 @@ int main(int argc, char *argv[]){
   int today = now->GetDate();
   int clock = now->GetTime();
   int seed = today+clock+jobpid;
+  if (Seed != 0) seed = (int) Seed;
   TRandom3 *gRandom = new TRandom3(seed);
-  cout << " Seed = " << seed << endl;  
+  cout << " Seed = " << seed << endl;
   for(int k=1; k<=NExtractions; k++) {
     if(fmod(k,1000000.) == 0) cout << k << " events generated" << endl;
 
@@ -478,6 +479,7 @@ void Assign_Parameters(map<string, double> data) {
   Opt_NP   = int (data["Opt_NP"]);
   prior    = int (data["prior"]);
   cutrange = int (data["cutrange"]);
+  Seed     = long (data["Seed"]);
 
   cutPoverT = data["cutrange"];
 

@@ -28,6 +28,7 @@ double CenB0Ratio, SigB0Ratio;
 double CenBchRatio, SigBchRatio;
 int NExtractions;
 int Opt_NP;
+long Seed;
 
 double CenBRpm, SigBRpm;
 double CenFLpm, SigFLpm;

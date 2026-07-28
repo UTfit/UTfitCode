@@ -32,7 +32,7 @@
 #
 # Sizing note. Runtime is linear and near-deterministic in NEXTRACTIONS once
 # the per-replica step sizes are reset properly (see ReflectBound / the
-# adaptive block in CKM_gen_rhopi.cc). Measured on lxbatch worker nodes:
+# adaptive block in CKM_gen_rhopi_mcmc.cc). Measured on lxbatch worker nodes:
 #
 #     T[s] ~= 207 * NEXTRACTIONS/1e6
 #
@@ -75,7 +75,7 @@ _rlx_main() {
   case "$OUTPUTDIR" in /*) ;; *) OUTPUTDIR="$RLX_DIR/$OUTPUTDIR" ;; esac
   case "$LOGDIR"    in /*) ;; *) LOGDIR="$RLX_DIR/$LOGDIR"       ;; esac
 
-  local BINARY="$RLX_DIR/CKM_gen_rhopi"
+  local BINARY="$RLX_DIR/CKM_gen_rhopi_mcmc"
   local WRAPPER="$WORKDIR/run_wrapper.sh"
   local JOBLIST="$WORKDIR/joblist.txt"
   local SUBFILE="$WORKDIR/rhopi_mcmc.sub"
@@ -89,7 +89,7 @@ _rlx_main() {
 
   # ---- 1. build --------------------------------------------------------
   if [ "$DOBUILD" = 1 ]; then
-    ( cd "$RLX_DIR" && make CKM_gen_rhopi ) \
+    ( cd "$RLX_DIR" && make mcmc ) \
       || { echo "run_lxbatch: build failed" >&2; return 1; }
   fi
   [ -x "$BINARY" ] || { echo "run_lxbatch: generator not built: $BINARY" >&2; return 1; }
@@ -134,7 +134,7 @@ EOF
 # $NJOBS jobs (rhopi_job$FIRSTJOB..rhopi_job$LASTJOB), $NEXTRACTIONS extractions each.
 universe                = vanilla
 executable              = $WRAPPER
-arguments               = CKM_gen_rhopi rhopi_job\$(jobid)
+arguments               = CKM_gen_rhopi_mcmc rhopi_job\$(jobid)
 transfer_input_files    = $BINARY, $CONFDIR/rhopi_job\$(jobid).conf
 should_transfer_files   = YES
 when_to_transfer_output = ON_EXIT
