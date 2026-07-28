@@ -27,6 +27,16 @@ vector< vector <int> > Opt;
 vector<string> chan;
 int NExtractions;
 int Opt_NP;
+long Seed;
+
+// parallel tempering parameters
+int NReplicas;
+int NTemps;
+double BetaMin;
+int NBurnin;
+int SwapEvery;
+double StepMag;
+double StepPhase;
 
 int UseBabar;
 int UseBelle;

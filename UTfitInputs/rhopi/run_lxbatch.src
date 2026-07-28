@@ -1,0 +1,180 @@
+# Build the rhopi MCMC generator, generate the per-job conf files, write the
+# Condor wrapper and submit file, and (optionally) submit -- in one shot.
+#
+#   source UTfitInputs/rhopi/run_lxbatch.src
+#
+# Everything is controlled by environment variables set before sourcing; the
+# defaults reproduce the alpha2026 production run (1000 jobs x 2,000,000
+# extractions on espresso, which completed 1000/1000 with no failures).
+#
+#   NJOBS         number of jobs                        [1000]
+#   NEXTRACTIONS  extractions (recorded events) per job [2000000]
+#   JOBFLAVOUR    Condor queue                          [espresso]
+#   WORKDIR       base dir for conf/ output/ logs/      [<scriptdir>/rhopi_mcmc]
+#   CONFDIR       per-job .conf files                   [$WORKDIR/conf]
+#   OUTPUTDIR     per-job .root files                   [$WORKDIR/output]
+#   LOGDIR        .log/.out/.err files                  [$WORKDIR/logs]
+#   TEMPLATE      conf template to seed from            [CKM_gen_rhopi_sum25.conf]
+#   FIRSTJOB      index of the first job                [0]
+#   SUBMIT        1 = condor_submit at the end          [0]
+#   DOBUILD       1 = rebuild the generator first       [1]
+#   LCGVIEW       LCG view sourced on the worker node   [LCG_109 x86_64-el9-gcc14-opt]
+#
+# Paths are resolved relative to the directory holding this script (i.e.
+# UTfitInputs/rhopi), not to your current working directory, so sourcing it
+# from anywhere puts the batch in the same place. Give an absolute path to
+# put the output elsewhere, e.g. WORKDIR=/afs/.../run/alpha2026/rhopi_mcmc.
+#
+# FIRSTJOB exists so you can top up an existing batch without redoing work:
+# the submit file is driven by an explicit job list, not by $(Process), so
+#   FIRSTJOB=20 NJOBS=980 source UTfitInputs/rhopi/run_lxbatch.src
+# queues jobs 20..999 against confs that are already there.
+#
+# Sizing note. Runtime is linear and near-deterministic in NEXTRACTIONS once
+# the per-replica step sizes are reset properly (see ReflectBound / the
+# adaptive block in CKM_gen_rhopi.cc). Measured on lxbatch worker nodes:
+#
+#     T[s] ~= 207 * NEXTRACTIONS/1e6
+#
+# so 2M/job ~= 7.5 min, comfortably inside espresso (20 min); the slowest of
+# 1000 jobs used 73% of the cap. Do not scale much past 3M/job on espresso --
+# at 5M/job roughly a quarter of the campaign would be killed at the wall.
+# Queue limits: espresso 20 min, microcentury 1 h, longlunch 2 h,
+# workday 8 h, tomorrow 1 d, testmatch 3 d, nextweek 1 w.
+#
+# Meant to be sourced, so a failure in any step stops the chain instead of
+# closing your shell. It also runs correctly if executed directly.
+
+_rlx_main() {
+
+  local RLX_DIR
+  if [ -n "${BASH_SOURCE[0]}" ] && [ "${BASH_SOURCE[0]}" != "$0" ]; then
+    RLX_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  else
+    RLX_DIR="$(cd "$(dirname "$0")" && pwd)"
+  fi
+
+  local NJOBS=${NJOBS:-1000}
+  local NEXTRACTIONS=${NEXTRACTIONS:-2000000}
+  local JOBFLAVOUR=${JOBFLAVOUR:-espresso}
+  local WORKDIR=${WORKDIR:-rhopi_mcmc}
+  local FIRSTJOB=${FIRSTJOB:-0}
+  local SUBMIT=${SUBMIT:-0}
+  local DOBUILD=${DOBUILD:-1}
+  local TEMPLATE=${TEMPLATE:-CKM_gen_rhopi_sum25.conf}
+  local LCGVIEW=${LCGVIEW:-/cvmfs/sft.cern.ch/lcg/views/LCG_109/x86_64-el9-gcc14-opt/setup.sh}
+
+  # Everything is anchored on the script's own directory, and Condor needs
+  # absolute paths anyway since the job runs from a scratch dir on the node.
+  case "$WORKDIR"  in /*) ;; *) WORKDIR="$RLX_DIR/$WORKDIR"   ;; esac
+  case "$TEMPLATE" in /*) ;; *) TEMPLATE="$RLX_DIR/$TEMPLATE" ;; esac
+  local CONFDIR=${CONFDIR:-$WORKDIR/conf}
+  local OUTPUTDIR=${OUTPUTDIR:-$WORKDIR/output}
+  local LOGDIR=${LOGDIR:-$WORKDIR/logs}
+  case "$CONFDIR"   in /*) ;; *) CONFDIR="$RLX_DIR/$CONFDIR"     ;; esac
+  case "$OUTPUTDIR" in /*) ;; *) OUTPUTDIR="$RLX_DIR/$OUTPUTDIR" ;; esac
+  case "$LOGDIR"    in /*) ;; *) LOGDIR="$RLX_DIR/$LOGDIR"       ;; esac
+
+  local BINARY="$RLX_DIR/CKM_gen_rhopi"
+  local WRAPPER="$WORKDIR/run_wrapper.sh"
+  local JOBLIST="$WORKDIR/joblist.txt"
+  local SUBFILE="$WORKDIR/rhopi_mcmc.sub"
+  local LASTJOB=$(( FIRSTJOB + NJOBS - 1 ))
+
+  case "$NJOBS$NEXTRACTIONS$FIRSTJOB" in
+    *[!0-9]*) echo "run_lxbatch: NJOBS/NEXTRACTIONS/FIRSTJOB must be non-negative integers" >&2; return 1 ;;
+  esac
+  [ "$NJOBS" -ge 1 ] || { echo "run_lxbatch: NJOBS must be >= 1" >&2; return 1; }
+  [ -f "$TEMPLATE" ] || { echo "run_lxbatch: template not found: $TEMPLATE" >&2; return 1; }
+
+  # ---- 1. build --------------------------------------------------------
+  if [ "$DOBUILD" = 1 ]; then
+    ( cd "$RLX_DIR" && make CKM_gen_rhopi ) \
+      || { echo "run_lxbatch: build failed" >&2; return 1; }
+  fi
+  [ -x "$BINARY" ] || { echo "run_lxbatch: generator not built: $BINARY" >&2; return 1; }
+
+  mkdir -p "$CONFDIR" "$OUTPUTDIR" "$LOGDIR" \
+    || { echo "run_lxbatch: cannot create $WORKDIR" >&2; return 1; }
+
+  # ---- 2. per-job confs, one unique seed each --------------------------
+  # The job index is mixed into the seed so two jobs cannot collide even if
+  # /dev/urandom happens to repeat a draw.
+  local i rand seed
+  for (( i=FIRSTJOB; i<=LASTJOB; i++ )); do
+    rand=$(od -An -N4 -tu4 /dev/urandom | tr -d ' ')
+    seed=$(( (rand + i*104729) % 2147483647 ))
+    sed "s/^NExtractions = .*/NExtractions = ${NEXTRACTIONS}/" "$TEMPLATE" \
+      > "$CONFDIR/rhopi_job${i}.conf" \
+      || { echo "run_lxbatch: cannot write conf $i" >&2; return 1; }
+    echo "Seed = ${seed}" >> "$CONFDIR/rhopi_job${i}.conf"
+  done
+
+  seq "$FIRSTJOB" "$LASTJOB" > "$JOBLIST" \
+    || { echo "run_lxbatch: cannot write $JOBLIST" >&2; return 1; }
+
+  # ---- 3. worker-node wrapper ------------------------------------------
+  cat > "$WRAPPER" <<EOF
+#!/bin/bash
+# Generated by UTfitInputs/rhopi/run_lxbatch.src -- do not edit by hand.
+# args: \$1 = binary name (already in the job scratch dir)
+#       \$2 = conf/output basename (without .conf/.root)
+set -e
+source $LCGVIEW
+chmod +x "./\$1"
+"./\$1" "\$2" "\$2"
+EOF
+  chmod +x "$WRAPPER"
+
+  # ---- 4. submit file --------------------------------------------------
+  # Driven by an explicit job list rather than "queue N", so FIRSTJOB works
+  # and the job index always matches the conf it is paired with.
+  cat > "$SUBFILE" <<EOF
+# Generated by UTfitInputs/rhopi/run_lxbatch.src -- do not edit by hand.
+# $NJOBS jobs (rhopi_job$FIRSTJOB..rhopi_job$LASTJOB), $NEXTRACTIONS extractions each.
+universe                = vanilla
+executable              = $WRAPPER
+arguments               = CKM_gen_rhopi rhopi_job\$(jobid)
+transfer_input_files    = $BINARY, $CONFDIR/rhopi_job\$(jobid).conf
+should_transfer_files   = YES
+when_to_transfer_output = ON_EXIT
+transfer_output_files   = rhopi_job\$(jobid).root
+transfer_output_remaps  = "rhopi_job\$(jobid).root = $OUTPUTDIR/rhopi_job\$(jobid).root"
+output                  = $LOGDIR/rhopi_job\$(jobid).out
+error                   = $LOGDIR/rhopi_job\$(jobid).err
+log                     = $LOGDIR/rhopi_job\$(jobid).log
++JobFlavour             = "$JOBFLAVOUR"
+request_cpus            = 1
+request_memory          = 2000
+request_disk            = 2000000
+queue jobid from $JOBLIST
+EOF
+
+  # ---- 5. report / submit ----------------------------------------------
+  cat <<EOF
+
+run_lxbatch: ready
+  jobs        : $NJOBS  (rhopi_job$FIRSTJOB .. rhopi_job$LASTJOB)
+  extractions : $NEXTRACTIONS / job   -> $(( NJOBS * NEXTRACTIONS )) total
+  queue       : $JOBFLAVOUR   (expect ~$(( 207 * NEXTRACTIONS / 1000000 )) s/job)
+  template    : $TEMPLATE
+  confs       : $CONFDIR
+  output      : $OUTPUTDIR
+  logs        : $LOGDIR
+  submit file : $SUBFILE
+EOF
+
+  if [ "$SUBMIT" = 1 ]; then
+    condor_submit "$SUBFILE" || { echo "run_lxbatch: condor_submit failed" >&2; return 1; }
+  else
+    echo "  (not submitted -- run: condor_submit $SUBFILE)"
+    echo "                  or re-source with SUBMIT=1"
+  fi
+  echo
+  return 0
+}
+
+_rlx_main
+_RLX_RC=$?
+unset -f _rlx_main
+[ "$_RLX_RC" = 0 ] || echo "run_lxbatch: aborted (rc=$_RLX_RC)" >&2
