@@ -1,0 +1,16 @@
+# Build artifacts. Note *.root is deliberately NOT ignored: generator results
+# such as UTfitInputs/rhopi/CKM_gen_rhopi_sum26.root are tracked on purpose.
+*.o
+*~
+
+# compiled generators
+UTfitInputs/rhopi/CKM_gen_rhopi
+UTfitInputs/rhopi/CKM_gen_rhopi_mcmc
+UTfitInputs/2alpha/CKM_gen
+
+# compiled macros
+UTfitMacros/macro1d/make1Dplots
+UTfitMacros/macro2d/2Dplot
+
+# scratch output
+dump.root
