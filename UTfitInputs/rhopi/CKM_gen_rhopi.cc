@@ -83,16 +83,16 @@ int main(int argc, char *argv[]){
 
   histo1D[0]  = new TH1D("sin2alpharhopi", " sin2alpha",  100,   -1., 1.); 
   histo1D[1]  = new TH1D("alpharhopi",     " alpha",      180,    0., 180.); 
-  histo1D[2]  = new TH1D("AbsAmp",         "AbsAmp",      100,    0., Amp_max);
-  histo1D[3]  = new TH1D("AbsAzz",         "AbszzA",      100,    0., Azz_max);
-  histo1D[4]  = new TH1D("AbsApm_bar",     "AbsApm_bar",  100,    0., Apm_max);
-  histo1D[5]  = new TH1D("AbsAmp_bar",     "AbsAmp_bar",  100,    0., Amp_max);
-  histo1D[6]  = new TH1D("AbsAzz_bar",     "AbsAzz_bar",  100,    0., Azz_max);
-  histo1D[7]  = new TH1D("ArgAmp",         "ArgAmp",      180, -180., 180.);
-  histo1D[8]  = new TH1D("ArgAzz",         "ArgzzA",      180, -180., 180.);
-  histo1D[9]  = new TH1D("ArgApm_bar",     "ArgApm_bar",  180, -180., 180.);
-  histo1D[10] = new TH1D("ArgAmp_bar",     "ArgAmp_bar",  180, -180., 180.);
-  histo1D[11] = new TH1D("ArgAzz_bar",     "ArgAzz_bar",  180, -180., 180.);
+  histo1D[2]  = new TH1D("AbsTpz",         "AbsTpz",      100,    0., Tpz_max);
+  histo1D[3]  = new TH1D("AbsTpm",         "AbsTpm",      100,    0., Tpm_max);
+  histo1D[4]  = new TH1D("AbsTmp",    	   "AbsTmp",  100,    0., Tmp_max);
+  histo1D[5]  = new TH1D("AbsP1",    	   "AbsP1",  100,    0., P1_max);
+  histo1D[6]  = new TH1D("AbsP0",    	   "AbsP0",  100,    0., P0_max);
+  histo1D[7]  = new TH1D("ArgTpmmTpz",     "ArgTpmmTpz",      180, -180., 180.);
+  histo1D[8]  = new TH1D("ArgTmpmTpz",     "ArgTmpmTpz",      180, -180., 180.);
+  histo1D[9]  = new TH1D("ArgP1mTpz",      "ArgP1mTpz",  180, -180., 180.);
+  histo1D[10] = new TH1D("ArgP0mTpz",      "ArgP0mTpz",  180, -180., 180.);
+  //histo1D[11] = new TH1D("ArgAzz_bar",     "ArgAzz_bar",  180, -180., 180.);
 
   // seed initialization 
   cout << "=========> number of extractions " << NExtractions << endl;
@@ -125,21 +125,24 @@ int main(int argc, char *argv[]){
   
   for(int k=1; k<=NExtractions; k++) {
     if(fmod(k,1000000.) == 0) cout << k << " events generated" << endl;
+	  
+    TComplex Tpz(gRandom->Rndm()*Tpz_max, (2.*gRandom->Rndm()-1.)*Pi, kTRUE);
+	TComplex Tpm(gRandom->Rndm()*Tpm_max, (2.*gRandom->Rndm()-1.)*Pi, kTRUE); 
+    TComplex Tmp(gRandom->Rndm()*Tmp_max, (2.*gRandom->Rndm()-1.)*Pi, kTRUE); 
+	
+	TComplex P1(gRandom->Rndm()*P1_max, (2.*gRandom->Rndm()-1.)*Pi, kTRUE); 
+	TComplex P2(gRandom->Rndm()*P2_max, (2.*gRandom->Rndm()-1.)*Pi, kTRUE);
 
-     // one arbitrary abs value and phase
-    TComplex Apm(1., 0., kTRUE);
-    TComplex Amp(gRandom->Rndm()*Amp_max, (2.*gRandom->Rndm()-1.)*Pi, kTRUE);
-    TComplex Azz(gRandom->Rndm()*Azz_max, (2.*gRandom->Rndm()-1.)*Pi, kTRUE);
+	TDouble alpha((2.*gRandom->Rndm()-1.)*Pi);
+	TComplex eialpha(1., alpha, kTrue);
+	  
+    TComplex Apm = Tpm*eialpha + P1 + P0;
+    TComplex Amp = Tmp*eialpha - P1 + P0;
+    TComplex Azz = (Tpm + Tmp - Tpz)*eialpha - 2.*P0;
 
-    TComplex Apm_bar(gRandom->Rndm()*Apm_max, (2.*gRandom->Rndm()-1.)*Pi, kTRUE);
-    TComplex Amp_bar(gRandom->Rndm()*Amp_max, (2.*gRandom->Rndm()-1.)*Pi, kTRUE);
-    TComplex Azz_bar(gRandom->Rndm()*Azz_max, (2.*gRandom->Rndm()-1.)*Pi, kTRUE);
-
-    TComplex e21alpha = (Apm_bar+Amp_bar+2.*Azz_bar)/(Apm+Amp+2.*Azz);
-
-    alpha = e21alpha.Theta()/2.;
-    if(alpha<0.) alpha += Pi;
-
+    TComplex Apm_bar = Tpm*eialpha.Conjugate() + P1 + P0;
+    TComplex Amp_bar = Tmp*eialpha.Conjugate() - P1 + P0;
+    TComplex Azz_bar = (Tpm + Tmp - Tpz)*eialpha.Conjugate() - 2.*P0;
     
     Upm = pow(Apm.Rho(),2.) + pow(Apm_bar.Rho(),2.);
     Ump = (pow(Amp.Rho(),2.) + pow(Amp_bar.Rho(),2.))/Upm;
@@ -229,16 +232,16 @@ int main(int argc, char *argv[]){
     histo1D[0]->Fill(sin(2.*alpha),xprob);
     histo1D[1]->Fill(alpha*180./Pi,xprob);
 
-    histo1D[2]->Fill(Amp.Rho(),xprob);
-    histo1D[3]->Fill(Azz.Rho(),xprob);
-    histo1D[4]->Fill(Apm_bar.Rho(),xprob);
-    histo1D[5]->Fill(Amp_bar.Rho(),xprob);
-    histo1D[6]->Fill(Azz_bar.Rho(),xprob);
-    histo1D[7]->Fill(Amp.Theta()*180./Pi,xprob);
-    histo1D[8]->Fill(Azz.Theta()*180./Pi,xprob);
-    histo1D[9]->Fill(Apm_bar.Theta()*180./Pi,xprob);
-    histo1D[10]->Fill(Amp_bar.Theta()*180./Pi,xprob);
-    histo1D[11]->Fill(Azz_bar.Theta()*180./Pi,xprob);
+    histo1D[2]->Fill(Tpz.Rho(),xprob);
+    histo1D[3]->Fill(Tpm.Rho(),xprob);
+    histo1D[4]->Fill(Tmp.Rho(),xprob);
+    histo1D[5]->Fill(P1.Rho(),xprob);
+    histo1D[6]->Fill(P0.Rho(),xprob);
+    histo1D[7]->Fill((Tpm.Theta()-Tpz.Theta())*180./Pi,xprob);
+    histo1D[8]->Fill((Tmp.Theta()-Tpz.Theta())*180./Pi,xprob);
+    histo1D[9]->Fill((P1.Theta()-Tpz.Theta())*180./Pi,xprob);
+    histo1D[10]->Fill((P0.Theta()-Tpz.Theta())*180./Pi,xprob);
+    //histo1D[11]->Fill(Azz_bar.Theta()*180./Pi,xprob);
 
   }
 
@@ -295,9 +298,12 @@ void Assign_Parameters(map<string, double> data) {
   UseBabar = int (data["UseBabar"]);
   UseBelle = int (data["UseBelle"]);
 
-  Apm_max = data["Apm_max"];
-  Amp_max = data["Amp_max"];
-  Azz_max = data["Azz_max"];
+  Tpm_max = data["Tpm_max"];
+  Tmp_max = data["Tmp_max"];
+  Tpz_max = data["Tpz_max"];
+
+  P1_max = data["P1_max"];
+  P0_max = data["P0_max"];
 
   CenNeu_BaBar[0] = data[("CenIzz_BaBar")];
   CenNeu_BaBar[1] = data[("CenImp_BaBar")];
