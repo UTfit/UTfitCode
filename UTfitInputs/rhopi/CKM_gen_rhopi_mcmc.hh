@@ -1,5 +1,5 @@
-#ifndef CKM_gen_rhopi_HH
-#define CKM_gen_rhopi_HH
+#ifndef CKM_gen_rhopi_mcmc_HH
+#define CKM_gen_rhopi_mcmc_HH
 
 #include <iostream>
 #include <string>
@@ -41,9 +41,11 @@ double StepPhase;
 int UseBabar;
 int UseBelle;
 
-double Apm_max;
-double Amp_max;
-double Azz_max;
+double Tpz_max;
+double Tpm_max;
+double Tmp_max;
+double P1_max;
+double P0_max;
 
 // separated correlation matrices for BaBar
 TMatrixDSym covStat_BaBar(26);

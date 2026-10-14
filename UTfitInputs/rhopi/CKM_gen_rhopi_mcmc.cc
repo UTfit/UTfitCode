@@ -5,6 +5,9 @@
 #include <sstream>
 #include <algorithm>
 #include <cmath>
+#include <cstring>
+#include <cstdlib>
+#include <limits>
 #include <unistd.h>
 #include <TH1.h>
 #include <TH2.h>
@@ -28,29 +31,21 @@ double Pi = acos(-1.);
 bool lfirst = true;
 
 // ---------------------------------------------------------------------
-// Parallel-tempering sampling of the 5 free complex rho-pi amplitudes.
-//
-// The amplitude convention (Apm/Amp/Azz/Apm_bar/Amp_bar/Azz_bar, Apm fixed
-// at (1,0) as the normalization/global-phase convention), the 26 U/I
-// observable formulas, and the alpha-extraction formula are unchanged from
-// the original generator and were verified against arXiv:hep-ex/0701015
-// and arXiv:1304.3503. Only the sampling method changes: the original code
-// drew i.i.d. flat-prior amplitude configurations and importance-weighted
-// them by exp(-chi2/2) against the 26-parameter Belle+BaBar measurement.
-// Because several of those 26 observables are tightly constrained, the
-// high-likelihood region is a tiny fraction of the flat-prior volume:
-// effective sample size (Kish ESS, via TH1::GetEffectiveEntries()) stayed
-// ~O(1-10) even at tens of millions of draws, with the output histogram
-// dominated by a handful of "lucky" draws and not reproducible across
-// random seeds. Parallel tempering (replica exchange MCMC) fixes this.
+// Parallel tempering in the tree/penguin parameterization of the updated
+// flat-prior generator: five complex parameters Tpz, Tpm, Tmp, P1, P0,
+// and an independently sampled alpha. Magnitudes have uniform priors on
+// their configured ranges; all phases and alpha are uniform on (-Pi,Pi].
+// The common phase is retained to match that generator's prior. The 26
+// U/I observables and Belle/BaBar likelihood are unchanged.
 // ---------------------------------------------------------------------
 
 struct Walker {
-  double magAmp, phAmp;
-  double magAzz, phAzz;
-  double magApmB, phApmB;
-  double magAmpB, phAmpB;
-  double magAzzB, phAzzB;
+  double magTpz, phTpz;
+  double magTpm, phTpm;
+  double magTmp, phTmp;
+  double magP1, phP1;
+  double magP0, phP0;
+  double alpha;
   double chisq;
 };
 
@@ -76,11 +71,12 @@ double WrapPhase(double x) {
 
 Walker RandomWalker(TRandom3 *rng) {
   Walker w;
-  w.magAmp  = rng->Rndm()*Amp_max;  w.phAmp  = (2.*rng->Rndm()-1.)*Pi;
-  w.magAzz  = rng->Rndm()*Azz_max;  w.phAzz  = (2.*rng->Rndm()-1.)*Pi;
-  w.magApmB = rng->Rndm()*Apm_max;  w.phApmB = (2.*rng->Rndm()-1.)*Pi;
-  w.magAmpB = rng->Rndm()*Amp_max;  w.phAmpB = (2.*rng->Rndm()-1.)*Pi;
-  w.magAzzB = rng->Rndm()*Azz_max;  w.phAzzB = (2.*rng->Rndm()-1.)*Pi;
+  w.magTpz = rng->Rndm()*Tpz_max;  w.phTpz = (2.*rng->Rndm()-1.)*Pi;
+  w.magTpm = rng->Rndm()*Tpm_max;  w.phTpm = (2.*rng->Rndm()-1.)*Pi;
+  w.magTmp = rng->Rndm()*Tmp_max;  w.phTmp = (2.*rng->Rndm()-1.)*Pi;
+  w.magP1 = rng->Rndm()*P1_max;  w.phP1 = (2.*rng->Rndm()-1.)*Pi;
+  w.magP0 = rng->Rndm()*P0_max;  w.phP0 = (2.*rng->Rndm()-1.)*Pi;
+  w.alpha = (2.*rng->Rndm()-1.)*Pi;
   w.chisq = 0.;
   return w;
 }
@@ -91,19 +87,28 @@ Walker RandomWalker(TRandom3 *rng) {
 double ChiSqFromWalker(const Walker &w, const TMatrixDSym &Vneu_BaBar,
 			const TMatrixDSym &Vneu_Belle, double *alphaOut) {
 
-  TComplex Apm(1., 0., kTRUE);
-  TComplex Amp(w.magAmp, w.phAmp, kTRUE);
-  TComplex Azz(w.magAzz, w.phAzz, kTRUE);
-  TComplex Apm_bar(w.magApmB, w.phApmB, kTRUE);
-  TComplex Amp_bar(w.magAmpB, w.phAmpB, kTRUE);
-  TComplex Azz_bar(w.magAzzB, w.phAzzB, kTRUE);
+  TComplex Tpz(w.magTpz, w.phTpz, kTRUE);
+  TComplex Tpm(w.magTpm, w.phTpm, kTRUE);
+  TComplex Tmp(w.magTmp, w.phTmp, kTRUE);
+  TComplex P1(w.magP1, w.phP1, kTRUE);
+  TComplex P0(w.magP0, w.phP0, kTRUE);
+  TComplex eialpha(1., w.alpha, kTRUE);
 
-  TComplex e21alpha = (Apm_bar+Amp_bar+2.*Azz_bar)/(Apm+Amp+2.*Azz);
-  double alpha = e21alpha.Theta()/2.;
+  TComplex Apm = Tpm*eialpha + P1 + P0;
+  TComplex Amp = Tmp*eialpha - P1 + P0;
+  TComplex Azz = (Tpm + Tmp - Tpz)*eialpha - 2.*P0;
+  TComplex Apm_bar = Tpm*TComplex::Conjugate(eialpha) + P1 + P0;
+  TComplex Amp_bar = Tmp*TComplex::Conjugate(eialpha) - P1 + P0;
+  TComplex Azz_bar = (Tpm + Tmp - Tpz)*TComplex::Conjugate(eialpha) - 2.*P0;
+
+  // Alpha is sampled directly; fold only its reported value into [0,Pi).
+  double alpha = fmod(w.alpha, Pi);
   if (alpha<0.) alpha += Pi;
   if (alphaOut) *alphaOut = alpha;
 
   double Upm = pow(Apm.Rho(),2.) + pow(Apm_bar.Rho(),2.);
+  if (!(Upm>0.) || !std::isfinite(Upm))
+    return std::numeric_limits<double>::infinity();
   double Ump = (pow(Amp.Rho(),2.) + pow(Amp_bar.Rho(),2.))/Upm;
   double Uzz = (pow(Azz.Rho(),2.) + pow(Azz_bar.Rho(),2.))/Upm;
 
@@ -165,16 +170,17 @@ double ChiSqFromWalker(const Walker &w, const TMatrixDSym &Vneu_BaBar,
 
 Walker Propose(const Walker &w, double stepMag, double stepPhase, TRandom3 *rng) {
   Walker p = w;
-  p.magAmp  = ReflectBound(w.magAmp  + rng->Gaus(0.,stepMag),   0., Amp_max);
-  p.phAmp   = WrapPhase(w.phAmp + rng->Gaus(0.,stepPhase));
-  p.magAzz  = ReflectBound(w.magAzz  + rng->Gaus(0.,stepMag),   0., Azz_max);
-  p.phAzz   = WrapPhase(w.phAzz + rng->Gaus(0.,stepPhase));
-  p.magApmB = ReflectBound(w.magApmB + rng->Gaus(0.,stepMag),   0., Apm_max);
-  p.phApmB  = WrapPhase(w.phApmB + rng->Gaus(0.,stepPhase));
-  p.magAmpB = ReflectBound(w.magAmpB + rng->Gaus(0.,stepMag),   0., Amp_max);
-  p.phAmpB  = WrapPhase(w.phAmpB + rng->Gaus(0.,stepPhase));
-  p.magAzzB = ReflectBound(w.magAzzB + rng->Gaus(0.,stepMag),   0., Azz_max);
-  p.phAzzB  = WrapPhase(w.phAzzB + rng->Gaus(0.,stepPhase));
+  p.magTpz = ReflectBound(w.magTpz + rng->Gaus(0.,stepMag), 0., Tpz_max);
+  p.phTpz = WrapPhase(w.phTpz + rng->Gaus(0.,stepPhase));
+  p.magTpm = ReflectBound(w.magTpm + rng->Gaus(0.,stepMag), 0., Tpm_max);
+  p.phTpm = WrapPhase(w.phTpm + rng->Gaus(0.,stepPhase));
+  p.magTmp = ReflectBound(w.magTmp + rng->Gaus(0.,stepMag), 0., Tmp_max);
+  p.phTmp = WrapPhase(w.phTmp + rng->Gaus(0.,stepPhase));
+  p.magP1 = ReflectBound(w.magP1 + rng->Gaus(0.,stepMag), 0., P1_max);
+  p.phP1 = WrapPhase(w.phP1 + rng->Gaus(0.,stepPhase));
+  p.magP0 = ReflectBound(w.magP0 + rng->Gaus(0.,stepMag), 0., P0_max);
+  p.phP0 = WrapPhase(w.phP0 + rng->Gaus(0.,stepPhase));
+  p.alpha = WrapPhase(w.alpha + rng->Gaus(0.,stepPhase));
   return p;
 }
 
@@ -224,20 +230,20 @@ int main(int argc, char *argv[]){
   output->mkdir("Input","some input distributions");
   output->cd("Input");
 
-  TH1D *histo1D[12];
+  const int NHistograms = 11;
+  TH1D *histo1D[NHistograms] = {};
 
   histo1D[0]  = new TH1D("sin2alpharhopi", " sin2alpha",  100,   -1., 1.);
   histo1D[1]  = new TH1D("alpharhopi",     " alpha",      180,    0., 180.);
-  histo1D[2]  = new TH1D("AbsAmp",         "AbsAmp",      100,    0., Amp_max);
-  histo1D[3]  = new TH1D("AbsAzz",         "AbszzA",      100,    0., Azz_max);
-  histo1D[4]  = new TH1D("AbsApm_bar",     "AbsApm_bar",  100,    0., Apm_max);
-  histo1D[5]  = new TH1D("AbsAmp_bar",     "AbsAmp_bar",  100,    0., Amp_max);
-  histo1D[6]  = new TH1D("AbsAzz_bar",     "AbsAzz_bar",  100,    0., Azz_max);
-  histo1D[7]  = new TH1D("ArgAmp",         "ArgAmp",      180, -180., 180.);
-  histo1D[8]  = new TH1D("ArgAzz",         "ArgzzA",      180, -180., 180.);
-  histo1D[9]  = new TH1D("ArgApm_bar",     "ArgApm_bar",  180, -180., 180.);
-  histo1D[10] = new TH1D("ArgAmp_bar",     "ArgAmp_bar",  180, -180., 180.);
-  histo1D[11] = new TH1D("ArgAzz_bar",     "ArgAzz_bar",  180, -180., 180.);
+  histo1D[2] = new TH1D("AbsTpz", "AbsTpz", 100, 0., Tpz_max);
+  histo1D[3] = new TH1D("AbsTpm", "AbsTpm", 100, 0., Tpm_max);
+  histo1D[4] = new TH1D("AbsTmp", "AbsTmp", 100, 0., Tmp_max);
+  histo1D[5] = new TH1D("AbsP1", "AbsP1", 100, 0., P1_max);
+  histo1D[6] = new TH1D("AbsP0", "AbsP0", 100, 0., P0_max);
+  histo1D[7] = new TH1D("ArgTpmmTpz", "ArgTpmmTpz", 180, -180., 180.);
+  histo1D[8] = new TH1D("ArgTmpmTpz", "ArgTmpmTpz", 180, -180., 180.);
+  histo1D[9] = new TH1D("ArgP1mTpz", "ArgP1mTpz", 180, -180., 180.);
+  histo1D[10] = new TH1D("ArgP0mTpz", "ArgP0mTpz", 180, -180., 180.);
 
   cout << "=========> number of extractions " << NExtractions << endl;
 
@@ -264,7 +270,7 @@ int main(int argc, char *argv[]){
   for (int m=0; m<NTemps; m++)
     beta[m] = (NTemps>1) ? pow(BetaMin, ((double)m)/(NTemps-1)) : 1.;
 
-  double maxRange = std::max(std::max(Apm_max,Amp_max),Azz_max);
+  double maxRange = std::max({Tpz_max, Tpm_max, Tmp_max, P1_max, P0_max});
   vector<double> stepMagLevel(NTemps), stepPhaseLevel(NTemps);
 
   const int AdaptWindow = 200;
@@ -273,7 +279,7 @@ int main(int argc, char *argv[]){
   vector<long> swapAcc(NTemps-1,0), swapProp(NTemps-1,0);         // sampling-phase only
 
   vector<double> chainMeanAlpha(NReplicas,0.), chainM2Alpha(NReplicas,0.);
-  vector<double> chainMeanAzz(NReplicas,0.),   chainM2Azz(NReplicas,0.);
+  vector<double> chainMeanTpz(NReplicas,0.),   chainM2Tpz(NReplicas,0.);
   vector<long>   chainCount(NReplicas,0);
 
   cout << "=========> " << NReplicas << " replicas x " << NStepsPerReplica
@@ -356,16 +362,15 @@ int main(int argc, char *argv[]){
 
 	histo1D[0]->Fill(sin(2.*alpha));
 	histo1D[1]->Fill(alphaDeg);
-	histo1D[2]->Fill(state[0].magAmp);
-	histo1D[3]->Fill(state[0].magAzz);
-	histo1D[4]->Fill(state[0].magApmB);
-	histo1D[5]->Fill(state[0].magAmpB);
-	histo1D[6]->Fill(state[0].magAzzB);
-	histo1D[7]->Fill(state[0].phAmp*180./Pi);
-	histo1D[8]->Fill(state[0].phAzz*180./Pi);
-	histo1D[9]->Fill(state[0].phApmB*180./Pi);
-	histo1D[10]->Fill(state[0].phAmpB*180./Pi);
-	histo1D[11]->Fill(state[0].phAzzB*180./Pi);
+	histo1D[2]->Fill(state[0].magTpz);
+	histo1D[3]->Fill(state[0].magTpm);
+	histo1D[4]->Fill(state[0].magTmp);
+	histo1D[5]->Fill(state[0].magP1);
+	histo1D[6]->Fill(state[0].magP0);
+	histo1D[7]->Fill(WrapPhase(state[0].phTpm-state[0].phTpz)*180./Pi);
+	histo1D[8]->Fill(WrapPhase(state[0].phTmp-state[0].phTpz)*180./Pi);
+	histo1D[9]->Fill(WrapPhase(state[0].phP1-state[0].phTpz)*180./Pi);
+	histo1D[10]->Fill(WrapPhase(state[0].phP0-state[0].phTpz)*180./Pi);
 
 	// Welford running mean/variance, per replica, for the Gelman-Rubin check
 	chainCount[rep]++;
@@ -373,9 +378,9 @@ int main(int argc, char *argv[]){
 	chainMeanAlpha[rep] += dA/chainCount[rep];
 	chainM2Alpha[rep]   += dA*(alphaDeg-chainMeanAlpha[rep]);
 
-	double dZ = state[0].magAzz - chainMeanAzz[rep];
-	chainMeanAzz[rep] += dZ/chainCount[rep];
-	chainM2Azz[rep]   += dZ*(state[0].magAzz-chainMeanAzz[rep]);
+	double dZ = state[0].magTpz - chainMeanTpz[rep];
+	chainMeanTpz[rep] += dZ/chainCount[rep];
+	chainM2Tpz[rep]   += dZ*(state[0].magTpz-chainMeanTpz[rep]);
       }
     }
 
@@ -394,13 +399,14 @@ int main(int argc, char *argv[]){
 
   cout << "=== Gelman-Rubin R-hat across " << NReplicas << " replicas (want ~1.0-1.1) ===" << endl;
   cout << "  alpha : " << GelmanRubin(chainMeanAlpha, chainM2Alpha, chainCount) << endl;
-  cout << "  |Azz| : " << GelmanRubin(chainMeanAzz,   chainM2Azz,   chainCount) << endl;
+  cout << "  |Tpz| : " << GelmanRubin(chainMeanTpz,   chainM2Tpz,   chainCount) << endl;
 
-  for(int h=0; h<12; h++) {
+  for(int h=0; h<NHistograms; h++) {
     //normalize
     if (histo1D[h]) {
       cout << "here: " << h << endl;
-      double norm = 1./(histo1D[h]->Integral());
+      double integral = histo1D[h]->Integral();
+      double norm = (integral>0.) ? 1./integral : 1.;
       cout << norm << endl;
       histo1D[h]->Scale(norm);
       histo1D[h]->Write();
@@ -460,9 +466,22 @@ void Assign_Parameters(map<string, double> data) {
   UseBabar = int (data["UseBabar"]);
   UseBelle = int (data["UseBelle"]);
 
-  Apm_max = data["Apm_max"];
-  Amp_max = data["Amp_max"];
-  Azz_max = data["Azz_max"];
+  // Old amplitude bounds do not define the new tree/penguin prior.
+  // Require explicit finite positive bounds rather than silently using zero.
+  const char* boundNames[] = {"Tpz_max", "Tpm_max", "Tmp_max", "P1_max", "P0_max"};
+  for (const char* name : boundNames) {
+    auto it = data.find(name);
+    if (it==data.end() || !std::isfinite(it->second) || it->second<=0.) {
+      cerr << "Missing or invalid parameter " << name
+           << ": specify a finite positive tree/penguin prior bound in the .conf file." << endl;
+      exit(1);
+    }
+  }
+  Tpz_max = data["Tpz_max"];
+  Tpm_max = data["Tpm_max"];
+  Tmp_max = data["Tmp_max"];
+  P1_max = data["P1_max"];
+  P0_max = data["P0_max"];
 
   CenNeu_BaBar[0] = data[("CenIzz_BaBar")];
   CenNeu_BaBar[1] = data[("CenImp_BaBar")];
