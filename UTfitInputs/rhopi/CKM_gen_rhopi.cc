@@ -476,7 +476,7 @@ void Assign_Parameters(map<string, double> data) {
   // to make it symmetric without inputting same numbers twice
   for(int ix=0;ix<26;ix++) {
     for(int iy=0;iy<ix;iy++) {
-      covStat_BaBar(iy,ix) = covStat_BaBar(iy,ix);
+      covStat_BaBar(iy,ix) = covStat_BaBar(ix,iy);
     }
   }
 
