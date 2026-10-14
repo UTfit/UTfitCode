@@ -131,10 +131,10 @@ int main(int argc, char *argv[]){
     TComplex Tmp(gRandom->Rndm()*Tmp_max, (2.*gRandom->Rndm()-1.)*Pi, kTRUE); 
 	
 	TComplex P1(gRandom->Rndm()*P1_max, (2.*gRandom->Rndm()-1.)*Pi, kTRUE); 
-	TComplex P2(gRandom->Rndm()*P2_max, (2.*gRandom->Rndm()-1.)*Pi, kTRUE);
+	TComplex P0(gRandom->Rndm()*P0_max, (2.*gRandom->Rndm()-1.)*Pi, kTRUE);
 
 	TDouble alpha((2.*gRandom->Rndm()-1.)*Pi);
-	TComplex eialpha(1., alpha, kTrue);
+	TComplex eialpha(1., alpha, kTRUE);
 	  
     TComplex Apm = Tpm*eialpha + P1 + P0;
     TComplex Amp = Tmp*eialpha - P1 + P0;
