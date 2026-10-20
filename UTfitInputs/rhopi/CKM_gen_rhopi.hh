@@ -31,9 +31,12 @@ int Opt_NP;
 int UseBabar;
 int UseBelle;
 
-double Apm_max;
-double Amp_max;
-double Azz_max;
+double Tpz_max;
+double Tpm_max;
+double Tmp_max;
+
+double P1_max;
+double P0_max;
 
 // separated correlation matrices for BaBar
 TMatrixDSym covStat_BaBar(26);
