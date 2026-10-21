@@ -17,7 +17,6 @@
 #include <TMatrixF.h>
 #include <TMatrixD.h>
 #include <TVector.h>
-#include <TComplex.h>
 #include "CKM_gen_rhopi.hh"
 
 using namespace std;
@@ -59,7 +58,6 @@ int main(int argc, char *argv[]){
 
   
   // 1D Histos
-  double alpha;
   TComplex Apm, Amp, Azz;
 
   double Upm, Ump, Uzz;
@@ -127,22 +125,22 @@ int main(int argc, char *argv[]){
     if(fmod(k,1000000.) == 0) cout << k << " events generated" << endl;
 	  
     TComplex Tpz(gRandom->Rndm()*Tpz_max, (2.*gRandom->Rndm()-1.)*Pi, kTRUE);
-	TComplex Tpm(gRandom->Rndm()*Tpm_max, (2.*gRandom->Rndm()-1.)*Pi, kTRUE); 
+    TComplex Tpm(gRandom->Rndm()*Tpm_max, (2.*gRandom->Rndm()-1.)*Pi, kTRUE); 
     TComplex Tmp(gRandom->Rndm()*Tmp_max, (2.*gRandom->Rndm()-1.)*Pi, kTRUE); 
 	
-	TComplex P1(gRandom->Rndm()*P1_max, (2.*gRandom->Rndm()-1.)*Pi, kTRUE); 
-	TComplex P0(gRandom->Rndm()*P0_max, (2.*gRandom->Rndm()-1.)*Pi, kTRUE);
-
-	TDouble alpha((2.*gRandom->Rndm()-1.)*Pi);
-	TComplex eialpha(1., alpha, kTRUE);
-	  
+    TComplex P1(gRandom->Rndm()*P1_max, (2.*gRandom->Rndm()-1.)*Pi, kTRUE); 
+    TComplex P0(gRandom->Rndm()*P0_max, (2.*gRandom->Rndm()-1.)*Pi, kTRUE);
+    
+    double alpha((2.*gRandom->Rndm()-1.)*Pi);
+    TComplex eialpha(1., alpha, kTRUE);
+    
     TComplex Apm = Tpm*eialpha + P1 + P0;
     TComplex Amp = Tmp*eialpha - P1 + P0;
     TComplex Azz = (Tpm + Tmp - Tpz)*eialpha - 2.*P0;
 
-    TComplex Apm_bar = Tpm*eialpha.Conjugate() + P1 + P0;
-    TComplex Amp_bar = Tmp*eialpha.Conjugate() - P1 + P0;
-    TComplex Azz_bar = (Tpm + Tmp - Tpz)*eialpha.Conjugate() - 2.*P0;
+    TComplex Apm_bar = Tpm*TComplex::Conjugate(eialpha) + P1 + P0;
+    TComplex Amp_bar = Tmp*TComplex::Conjugate(eialpha) - P1 + P0;
+    TComplex Azz_bar = (Tpm + Tmp - Tpz)*TComplex::Conjugate(eialpha) - 2.*P0;
     
     Upm = pow(Apm.Rho(),2.) + pow(Apm_bar.Rho(),2.);
     Ump = (pow(Amp.Rho(),2.) + pow(Amp_bar.Rho(),2.))/Upm;
